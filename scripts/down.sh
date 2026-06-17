@@ -88,6 +88,11 @@ export TF_VAR_bp_secret_key="$BP_SECRET_KEY"
 export TF_VAR_location="${AZURE_LOCATION:-eastus}"
 export TF_VAR_vm_size="${VM_SIZE:-Standard_B2s}"
 
+# Owner tag — MUST match the value used at up.sh time or terraform will plan a
+# replacement of a different (non-existent) resource group. resolve_owner_tag
+# uses the same source order as up.sh ($OWNER_TAG → whoami).
+export TF_VAR_owner="$(resolve_owner_tag)"
+
 # ssh_public_key needed for destroy plan too
 SSH_KEY_PATH="${SSH_PUBLIC_KEY_PATH:-$HOME/.ssh/id_rsa.pub}"
 SSH_KEY_PATH="${SSH_KEY_PATH/#\~/$HOME}"

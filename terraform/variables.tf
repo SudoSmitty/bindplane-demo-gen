@@ -59,3 +59,19 @@ variable "resource_prefix" {
   description = "Short prefix prepended to all resource names. Change to avoid naming collisions when running multiple demos simultaneously."
   default     = "bpdemo"
 }
+
+variable "owner" {
+  type        = string
+  description = <<-EOT
+    Per-operator identifier woven into every Azure resource name and tagged on every
+    resource. Lets multiple operators run demos in the same subscription without
+    colliding on resource group / VM / VNet names. Must be 1-12 lowercase alphanumeric
+    characters. scripts/up.sh derives this automatically from $OWNER_TAG (or `whoami`
+    if unset); override by setting OWNER_TAG in .env.
+  EOT
+
+  validation {
+    condition     = can(regex("^[a-z0-9]{1,12}$", var.owner))
+    error_message = "owner must be 1-12 lowercase alphanumeric characters (a-z, 0-9). Set OWNER_TAG in .env to override."
+  }
+}

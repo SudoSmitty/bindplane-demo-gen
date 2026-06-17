@@ -76,6 +76,12 @@ export TF_VAR_demo="$DEMO"
 export TF_VAR_bp_opamp_endpoint="$BP_OPAMP_ENDPOINT"
 export TF_VAR_bp_secret_key="$BP_SECRET_KEY"
 
+# Owner tag — auto-derived from $OWNER_TAG (or `whoami`) so multiple operators do
+# not collide on Azure resource group / VM / VNet names. See terraform/variables.tf.
+OWNER="$(resolve_owner_tag)"
+export TF_VAR_owner="$OWNER"
+info "Using owner tag: $OWNER (override with OWNER_TAG in .env)"
+
 # SSH public key: read from file path in .env
 SSH_KEY_PATH="${SSH_PUBLIC_KEY_PATH:-$HOME/.ssh/id_rsa.pub}"
 SSH_KEY_PATH="${SSH_KEY_PATH/#\~/$HOME}"  # expand tilde

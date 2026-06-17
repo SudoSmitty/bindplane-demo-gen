@@ -131,6 +131,27 @@ demo_exists() {
   [[ -f "$REPO/demos/${name}/manifest.yaml" ]]
 }
 
+# ── resolve_owner_tag ─────────────────────────────────────────────────────────
+# Produce a stable per-operator identifier for Azure resource naming + tagging.
+# Source order:
+#   1. $OWNER_TAG already in env (from .env or shell export)
+#   2. `whoami`, sanitised
+# The result is always lowercased, stripped to [a-z0-9], and truncated to 12 chars.
+# If sanitisation leaves an empty string, falls back to "operator".
+# Echoes the resolved value AND exports it as OWNER_TAG so subsequent calls are no-ops.
+resolve_owner_tag() {
+  local raw="${OWNER_TAG:-}"
+  if [[ -z "$raw" ]]; then
+    raw="$(whoami 2>/dev/null || echo operator)"
+  fi
+  # Lowercase, keep only a-z0-9, trim to 12 chars.
+  local sanitized
+  sanitized="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-12)"
+  [[ -z "$sanitized" ]] && sanitized="operator"
+  export OWNER_TAG="$sanitized"
+  printf '%s' "$sanitized"
+}
+
 # ── repo_root / REPO ──────────────────────────────────────────────────────────
 # Walk up from scripts/lib/ until we find a directory containing CLAUDE.md.
 _resolve_repo_root() {

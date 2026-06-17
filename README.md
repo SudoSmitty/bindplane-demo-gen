@@ -162,3 +162,13 @@ CLAUDE.md         conventions + demo contract (read before adding a demo)
 Single `Standard_B2s`/`B2ms` VM, no persistent disks, one resource group. Always `down.sh` after a
 session; consider an Azure auto-shutdown schedule as a backstop. Secrets live only in gitignored
 `.env` / `secrets.auto.tfvars` and the VM's root-owned `/opt/demo/.env`.
+
+## Multi-operator isolation
+
+Every Azure resource name embeds a per-operator `owner` tag — pattern
+`<prefix>-<owner>-<demo>` (e.g. `rg-bpdemo-jdoe-energy`, `vm-bpdemo-jdoe-energy`). `up.sh` derives
+`owner` automatically from `OWNER_TAG` in `.env`, falling back to `whoami` (sanitised to ≤12
+lowercase alphanumerics). Two SEs running the same demo in the same Azure subscription will get
+distinct resource groups and never step on each other. Resources are also tagged `owner=<value>`
+for portal filtering and cost attribution. Override with `OWNER_TAG=jdoe` in `.env` for CI or
+shared service accounts.
