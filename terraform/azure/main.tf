@@ -27,7 +27,7 @@ module "vm" {
   ssh_public_key      = var.ssh_public_key
   nic_id              = module.network.nic_id
   # Render cloud-init template and base64-encode inline — no extra provider needed.
-  custom_data = base64encode(templatefile("${path.module}/cloud-init.tftpl", {
+  custom_data = base64encode(templatefile("${path.module}/../cloud-init.tftpl", {
     demo              = var.demo
     bp_opamp_endpoint = var.bp_opamp_endpoint
     bp_secret_key     = var.bp_secret_key

@@ -92,7 +92,8 @@ fi
 # ── Read terraform outputs ────────────────────────────────────────────────────
 PUBLIC_IP="$(tf output -raw public_ip 2>/dev/null || true)"
 ADMIN_USER="$(tf output -raw admin_username 2>/dev/null || true)"
-ADMIN_USER="${ADMIN_USER:-azureuser}"
+DEFAULT_USER="$([[ "$CLOUD" == "aws" ]] && echo ubuntu || echo azureuser)"
+ADMIN_USER="${ADMIN_USER:-$DEFAULT_USER}"
 
 if [[ -z "$PUBLIC_IP" ]]; then
   err "No running VM found. Run scripts/up.sh first."

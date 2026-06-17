@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# scripts/up.sh — spin up a demo on Azure.
-# Usage: scripts/up.sh [--demo <name>] [--skip-validate]
+# scripts/up.sh — spin up a demo on Azure (default) or AWS.
+# Usage: scripts/up.sh [--demo <name>] [--cloud azure|aws] [--skip-validate]
 set -euo pipefail
 
 # shellcheck source=lib/common.sh
@@ -11,16 +11,19 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Spin up a demo environment on Azure.
+Spin up a demo environment on Azure or AWS.
 
 Options:
   --demo <name>      Demo name to deploy (skips interactive picker)
+  --cloud <name>     Target cloud: azure (default) or aws.
+                     Can also be set via CLOUD=<name> in .env or shell env.
   --skip-validate    Skip static validation before deploy (not recommended)
   -h, --help         Show this help message
 
 Examples:
   $(basename "$0")
   $(basename "$0") --demo manufacturing
+  $(basename "$0") --demo manufacturing --cloud aws
   $(basename "$0") --demo manufacturing --skip-validate
 EOF
 }
@@ -34,6 +37,11 @@ while [[ $# -gt 0 ]]; do
     --demo)
       [[ -n "${2:-}" ]] || { err "--demo requires a value"; exit 1; }
       DEMO="$2"
+      shift 2
+      ;;
+    --cloud)
+      [[ -n "${2:-}" ]] || { err "--cloud requires a value"; exit 1; }
+      export CLOUD="$2"
       shift 2
       ;;
     --skip-validate)
@@ -54,7 +62,13 @@ done
 
 # ── load env + pick demo ──────────────────────────────────────────────────────
 load_env  # requires BP_OPAMP_ENDPOINT + BP_SECRET_KEY (+ BP_API_KEY for pipeline apply)
+# ── resolve cloud (after load_env so .env can set CLOUD) ─────────────────────────
+CLOUD="$(resolve_cloud)"
+info "Target cloud: $CLOUD (override with --cloud or CLOUD= in .env)"
 
+if [[ "$CLOUD" == "aws" ]]; then
+  require_aws_cli   # fails fast if no creds resolvable
+fi
 if [[ -z "$DEMO" ]]; then
   DEMO="$(bash "$REPO/scripts/select.sh")"
 fi
@@ -77,7 +91,7 @@ export TF_VAR_bp_opamp_endpoint="$BP_OPAMP_ENDPOINT"
 export TF_VAR_bp_secret_key="$BP_SECRET_KEY"
 
 # Owner tag — auto-derived from $OWNER_TAG (or `whoami`) so multiple operators do
-# not collide on Azure resource group / VM / VNet names. See terraform/variables.tf.
+# not collide on cloud resource names. See terraform/<cloud>/variables.tf.
 OWNER="$(resolve_owner_tag)"
 export TF_VAR_owner="$OWNER"
 info "Using owner tag: $OWNER (override with OWNER_TAG in .env)"
@@ -98,8 +112,25 @@ else
   export TF_VAR_admin_source_cidr="$ADMIN_SOURCE_CIDR"
 fi
 
-export TF_VAR_location="${AZURE_LOCATION:-eastus}"
-export TF_VAR_vm_size="${VM_SIZE:-Standard_B2s}"
+# Per-cloud TF_VAR exports. Both clouds share the BP_* and admin-side vars above;
+# only the region/size knobs and admin_username default differ.
+if [[ "$CLOUD" == "azure" ]]; then
+  export TF_VAR_location="${AZURE_LOCATION:-eastus}"
+  export TF_VAR_vm_size="${VM_SIZE:-Standard_B2s}"
+  : "${ADMIN_USERNAME:=azureuser}"
+  export TF_VAR_admin_username="$ADMIN_USERNAME"
+else
+  # AWS uses the standard CLI credential chain — the provider picks up env vars,
+  # ~/.aws/credentials, ~/.aws/config, or IAM role. Only region + optional profile here.
+  export TF_VAR_region="${AWS_REGION:-us-east-1}"
+  export TF_VAR_instance_type="${EC2_INSTANCE_TYPE:-t3.small}"
+  export TF_VAR_aws_profile="${AWS_PROFILE:-}"
+  : "${ADMIN_USERNAME:=ubuntu}"
+  export TF_VAR_admin_username="$ADMIN_USERNAME"
+  # Surface AWS_PROFILE to the terraform process so it's picked up by the provider
+  # even if not exported in the parent shell.
+  [[ -n "${AWS_PROFILE:-}" ]] && export AWS_PROFILE
+fi
 
 # ── terraform init + apply ────────────────────────────────────────────────────
 info "Initializing Terraform..."
@@ -111,7 +142,7 @@ tf apply -auto-approve -var "demo=$DEMO"
 # ── read outputs ──────────────────────────────────────────────────────────────
 PUBLIC_IP="$(tf output -raw public_ip)"
 ADMIN_USER="$(tf output -raw admin_username)"
-info "VM is up at $PUBLIC_IP (user: $ADMIN_USER)"
+info "VM is up at $PUBLIC_IP (user: $ADMIN_USER, cloud: $CLOUD)"
 
 # ── wait for SSH (timeout 5 min, poll every 10s) ──────────────────────────────
 info "Waiting for SSH to become available..."

@@ -117,11 +117,59 @@ manifest_get() {
   yq eval "${yq_path}" "$REPO/demos/${demo}/manifest.yaml"
 }
 
+# ── resolve_cloud ─────────────────────────────────────────────────────────────
+# Pick the active cloud: explicit CLOUD env var (azure|aws), else default 'azure'.
+# Echoes the resolved value AND exports CLOUD so subsequent calls are no-ops.
+# Validates against the set of terraform/<cloud>/ root modules that actually exist.
+resolve_cloud() {
+  local raw
+  raw="$(printf '%s' "${CLOUD:-azure}" | tr '[:upper:]' '[:lower:]')"
+  case "$raw" in
+    azure|aws) ;;
+    *)
+      err "Unknown CLOUD '$raw'. Supported: azure, aws."
+      exit 1
+      ;;
+  esac
+  if [[ ! -d "$REPO/terraform/$raw" ]]; then
+    err "terraform/$raw/ root not found in repo."
+    exit 1
+  fi
+  export CLOUD="$raw"
+  printf '%s' "$raw"
+}
+
 # ── tf ────────────────────────────────────────────────────────────────────────
-# Thin wrapper around terraform that always targets the repo's terraform/ dir.
+# Thin wrapper around terraform that targets the active cloud's root module.
 # Usage: tf init  /  tf apply -auto-approve
+# Reads $CLOUD (default 'azure'); validate via resolve_cloud first if you need
+# to fail-fast with a clean error.
 tf() {
-  terraform -chdir="$REPO/terraform" "$@"
+  local cloud="${CLOUD:-azure}"
+  terraform -chdir="$REPO/terraform/$cloud" "$@"
+}
+
+# ── require_aws_cli ───────────────────────────────────────────────────────────
+# Errors with an install hint if the aws CLI is not on PATH, OR if no AWS
+# credentials can be resolved by the standard provider chain (env vars, profile,
+# IAM role). The actual credential check uses `aws sts get-caller-identity`
+# which is the canonical "am I authenticated?" probe — it never echoes secrets.
+require_aws_cli() {
+  if ! command -v aws &>/dev/null; then
+    err "The 'aws' CLI is required for CLOUD=aws and was not found on PATH."
+    err "Install:  brew install awscli   (macOS)"
+    err "          https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+    exit 1
+  fi
+  # Honour AWS_PROFILE if set; the AWS CLI picks it up automatically.
+  if ! aws sts get-caller-identity >/dev/null 2>&1; then
+    err "AWS credentials not resolved by the CLI credential chain."
+    err "Try one of:"
+    err "  • aws configure                 (interactive — writes ~/.aws/credentials)"
+    err "  • aws sso login --profile <name> (then set AWS_PROFILE=<name> in .env)"
+    err "  • export AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in your shell"
+    exit 1
+  fi
 }
 
 # ── demo_exists ───────────────────────────────────────────────────────────────

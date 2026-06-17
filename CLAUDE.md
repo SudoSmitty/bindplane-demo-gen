@@ -4,6 +4,10 @@ Repeatable Dynatrace SE demos showing **BindPlane** (now a Dynatrace product) ma
 OpenTelemetry collectors** (BDOT — BindPlane Distro for OpenTelemetry). All three signals
 (**logs + metrics + traces**) flow into Dynatrace. Two demos ship today (`manufacturing`,
 `networking`); one runs at a time; more can be added with zero Terraform change.
+The operator picks the cloud at spin-up: **Azure (default) or AWS** via `--cloud azure|aws`
+(or `CLOUD=` in `.env`). The Terraform roots live under `terraform/azure/` and `terraform/aws/`
+and share `terraform/cloud-init.tftpl`; the BindPlane / Docker / OpAMP layers above are identical
+on both clouds.
 
 ## The Demo Contract (READ THIS BEFORE ADDING A DEMO)
 
@@ -98,9 +102,11 @@ Without `BP_API_KEY`, `up.sh` warns and skips apply; collectors enroll but recei
 ## Architecture (how it fits together)
 
 ```
-scripts/up.sh --demo <name>
+scripts/up.sh --demo <name> [--cloud azure|aws]
   → terraform apply -var demo=<name>   (reads demos/<name>/manifest.yaml via locals.tf)
-  → 1 Azure Linux VM, single resource group, cloud-init installs docker + runs the demo's compose
+      · --cloud azure (default) → terraform/azure/  → 1 Linux VM, single resource group
+      · --cloud aws             → terraform/aws/    → 1 EC2 instance, VPC + IGW + SG + EIP
+  → cloud-init (shared terraform/cloud-init.tftpl) installs docker + writes /opt/demo/.env
   → BDOT collectors enroll to BindPlane Cloud over OpAMP (endpoint+secret+labels)
   → simulators feed collectors; instrumented FastAPI app emits traces to the gateway collector
   → scripts/bp-apply.sh:
@@ -109,21 +115,33 @@ scripts/up.sh --demo <name>
        bindplane rollout start <name>           (for each Configuration, best-effort)
   → BindPlane pushes pipelines to matching collectors (OpAMP heartbeat, ~60s)
   → gateway collector exports OTLP via dynatrace_otlp destination → Dynatrace
-scripts/down.sh  → ssh-drain collectors (frees cap) → terraform destroy (atomic)
-scripts/down.sh --purge-bindplane  → also deletes BindPlane Configurations + Destinations
+scripts/down.sh [--cloud ...]    → ssh-drain collectors (frees cap) → terraform destroy (atomic)
+scripts/down.sh --purge-bindplane → also deletes BindPlane Configurations + Destinations
                                       (bindplane delete configuration <name> / delete destination <name>)
 ```
+
+**Cloud credentials** — the scripts never read access keys from `.env`:
+  · Azure: `az login` (azurerm provider uses the active CLI session).
+  · AWS:   standard CLI credential chain — env vars, `~/.aws/credentials` (`aws configure`),
+          `~/.aws/config` (`aws sso login --profile <name>`), or IAM role. Set `AWS_PROFILE`
+          in `.env` if you use a named profile. `require_aws_cli` in `scripts/lib/common.sh`
+          fails fast with `aws sts get-caller-identity` before any tf apply.
 
 Only the **gateway** collector holds the Dynatrace token (via the `dynatrace_otlp` destination
 managed in BindPlane); edge collectors forward OTLP to the gateway via `otlp_grpc` destination.
 
 ## Project agents & skills (`.claude/`)
 
-- **agents/terraform-azure** — the Azure root + modules + cloud-init. Keep it demo-agnostic.
+- **agents/terraform-azure** — the Azure root (`terraform/azure/`) + modules + cloud-init. Keep it demo-agnostic.
 - **agents/bindplane-pipeline** — `demos/*/bindplane/*.yaml` blueprints + rollout runbooks.
 - **agents/otel-simulator** — Compose simulators + instrumented trace apps (3-signal contract).
 - **skills/demo-scaffold** — generate a new `demos/<name>/` from `demos/_template/`.
 - **skills/bindplane-validate** — static guardrail (rules 1–7 above) before spin-up.
+
+The AWS root (`terraform/aws/`) mirrors the Azure root and is also demo-agnostic — same outputs
+(`public_ip`, `admin_username`, `vm_name`, `demo`) so the scripts treat both clouds symmetrically.
+When editing AWS Terraform, keep parity with the Azure module surface (same `name_suffix`
+pattern, same `common_tags` map, same EIP/PIP semantics).
 
 ## House style
 
