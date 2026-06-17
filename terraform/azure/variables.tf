@@ -1,10 +1,10 @@
 variable "demo" {
   type        = string
-  description = "Name of the demo to deploy. Must match a directory under ../demos/ that contains a manifest.yaml."
+  description = "Name of the demo to deploy. Must match a directory under ../../demos/ that contains a manifest.yaml."
 
   validation {
-    condition     = contains([for f in fileset("${path.module}/../demos", "*/manifest.yaml") : dirname(f)], var.demo)
-    error_message = "demo must be one of the directories under demos/ that contains a manifest.yaml. Valid values: ${join(", ", [for f in fileset("${path.module}/../demos", "*/manifest.yaml") : dirname(f)])}."
+    condition     = contains([for f in fileset("${path.module}/../../demos", "*/manifest.yaml") : dirname(f)], var.demo)
+    error_message = "demo must be one of the directories under demos/ that contains a manifest.yaml. Valid values: ${join(", ", [for f in fileset("${path.module}/../../demos", "*/manifest.yaml") : dirname(f)])}."
   }
 }
 

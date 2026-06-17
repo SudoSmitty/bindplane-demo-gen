@@ -1,6 +1,6 @@
 locals {
   # Read the selected demo's manifest — the single source of truth for per-demo settings.
-  manifest = yamldecode(file("${path.module}/../demos/${var.demo}/manifest.yaml"))
+  manifest = yamldecode(file("${path.module}/../../demos/${var.demo}/manifest.yaml"))
 
   # Human-readable display name from the manifest.
   display_name = local.manifest.display_name

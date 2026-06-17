@@ -6,13 +6,15 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 load_env --skip-secrets
+CLOUD="$(resolve_cloud)"
 
-# ── Read terraform outputs ────────────────────────────────────────────────────
+# ── Read terraform outputs ──────────────────────────────────────────────────────────
 PUBLIC_IP="$(tf output -raw public_ip 2>/dev/null || true)"
 ADMIN_USER="$(tf output -raw admin_username 2>/dev/null || true)"
 
-# Default admin username if terraform has not yet set it
-ADMIN_USER="${ADMIN_USER:-azureuser}"
+# Default admin username depends on cloud (Azure: azureuser, AWS Ubuntu: ubuntu)
+DEFAULT_USER="$([[ "$CLOUD" == "aws" ]] && echo ubuntu || echo azureuser)"
+ADMIN_USER="${ADMIN_USER:-$DEFAULT_USER}"
 
 if [[ -z "$PUBLIC_IP" ]]; then
   err "No running VM found. Run scripts/up.sh first."
